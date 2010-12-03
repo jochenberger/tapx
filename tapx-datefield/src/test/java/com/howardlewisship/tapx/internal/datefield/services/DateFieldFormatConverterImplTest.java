@@ -85,6 +85,14 @@ public class DateFieldFormatConverterImplTest extends Assert
     }
 
     @Test
+    public void german_default_locale_with_time()
+    {
+        DateFormat format = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale.GERMAN);
+
+        assertEquals(converter.convertToClient(format), "%d.%m.%y %H:%M");
+    }
+
+    @Test
     public void not_simple_date_format()
     {
         DateFormat fixture = new DateFormatFixture();
