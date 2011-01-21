@@ -1,0 +1,5 @@
+<t:layout xmlns:t="http://tapestry.apache.org/schema/tapestry_5_1_0.xsd" xmlns:p="tapestry:parameter" xmlns:tx="tapestry-library:tapx">
+
+  <tx:tree model="fileSystemTreeModel"/>
+
+</t:layout>
