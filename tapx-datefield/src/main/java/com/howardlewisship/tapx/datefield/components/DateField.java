@@ -18,8 +18,11 @@ import java.lang.annotation.Annotation;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.Locale;
+import java.util.TimeZone;
 
 import org.apache.tapestry5.Asset;
 import org.apache.tapestry5.Binding;
@@ -35,6 +38,8 @@ import org.apache.tapestry5.annotations.Import;
 import org.apache.tapestry5.annotations.Parameter;
 import org.apache.tapestry5.corelib.base.AbstractField;
 import org.apache.tapestry5.corelib.components.BeanEditor;
+import org.apache.tapestry5.func.F;
+import org.apache.tapestry5.func.Mapper;
 import org.apache.tapestry5.internal.bindings.AbstractBinding;
 import org.apache.tapestry5.ioc.AnnotationProvider;
 import org.apache.tapestry5.ioc.Messages;
@@ -46,13 +51,20 @@ import org.apache.tapestry5.services.Request;
 import org.apache.tapestry5.services.javascript.JavaScriptSupport;
 
 import com.howardlewisship.tapx.datefield.TimeSignificant;
+import com.howardlewisship.tapx.datefield.TimeZoneVisibility;
+import com.howardlewisship.tapx.datefield.services.ClientTimeZoneTracker;
 import com.howardlewisship.tapx.datefield.services.DateFieldFormatConverter;
 
 /**
  * A replacement for Tapestry's built-in DateField, built around the <a
  * href="http://www.dynarch.com/projects/calendar/old/">Dynarch
- * JSCalendar Widget</a>. This is a highly functional calendar, but is distributed as LGPL and so can't be built
- * directly into Tapestry.
+ * JSCalendar Widget</a>. This is a highly functional calendar, but is distributed as LGPL and so
+ * can't be built directly into Tapestry.
+ * <p>
+ * Starting with version 1.1, there is enhanced control over the time zone displayed to the user
+ * (including the optional ability to edit the time zone). You will likely want to include a
+ * {@link TimeZoneIdentifier} component in your application's Layout to ensure that the correct time
+ * zone for the client is used.
  */
 @Import(stack = "tapx-datefield")
 public class DateField extends AbstractField
@@ -83,17 +95,18 @@ public class DateField extends AbstractField
     private Date value;
 
     /**
-     * The format used to format <em>and parse</em> dates. This is typically specified as a string which is coerced to a
-     * DateFormat. You should be aware that using a date format with a two digit year is problematic: Java (not
-     * Tapestry) may get confused about the century. The default is either the localized short date format or (if the
-     * time parameter is true), the localized short date time format.
+     * The format used to format <em>and parse</em> dates. This is typically specified as a string
+     * which is coerced to a DateFormat. You should be aware that using a date format with a two
+     * digit year is problematic: Java (not Tapestry) may get confused about the century. The
+     * default is either the localized short date format or (if the time parameter is true), the
+     * localized short date time format.
      */
     @Parameter(required = true, allowNull = false, defaultPrefix = BindingConstants.LITERAL)
     private DateFormat format;
 
     /**
-     * If true, then the calendar will include time selection as well as date selection. This is normally false, unless
-     * the property has the {@link TimeSignificant} annotation.
+     * If true, then the calendar will include time selection as well as date selection. This is
+     * normally false, unless the property has the {@link TimeSignificant} annotation.
      * 
      * @since 1.1
      */
@@ -101,16 +114,24 @@ public class DateField extends AbstractField
     private boolean time;
 
     /**
-     * If true, then the text field will be hidden, and only the icon for the date picker will be visible. The default
-     * is false.
+     * Controls how the time zone is presented to the user; the default (for compatibility) is NONE.
+     * 
+     * @since 1.1
+     */
+    @Parameter(value = "none", defaultPrefix = BindingConstants.LITERAL)
+    private TimeZoneVisibility timeZone;
+
+    /**
+     * If true, then the text field will be hidden, and only the icon for the date picker will be
+     * visible. The default is false.
      */
     @Parameter
     private boolean hideTextField;
 
     /**
-     * Object will will provide access to annotations (such as {@link TimeSignificant}). This is only used
-     * when configuring DateField to work within the {@link BeanEditor}. Normally, annotations come from
-     * the property bound the value parameter.
+     * Object that will provide access to annotations (such as {@link TimeSignificant}). This is
+     * only used when configuring DateField to work within the {@link BeanEditor}. Normally,
+     * annotations come from the property bound the value parameter.
      * 
      * @since 1.1
      */
@@ -118,12 +139,13 @@ public class DateField extends AbstractField
     private AnnotationProvider annotationProvider;
 
     /**
-     * The object that will perform input validation (which occurs after translation). The translate binding prefix is
-     * generally used to provide this object in a declarative fashion.
+     * The object that will perform input validation (which occurs after translation). The translate
+     * binding prefix is generally used to provide this object in a declarative fashion.
      */
     @Parameter(defaultPrefix = BindingConstants.VALIDATE)
     private FieldValidator<Object> validate;
 
+    /** The icon to use for the button that raises the calendar popup. */
     @Parameter(defaultPrefix = BindingConstants.ASSET, value = "datefield.gif")
     private Asset icon;
 
@@ -132,6 +154,9 @@ public class DateField extends AbstractField
 
     @Inject
     private ComponentResources resources;
+
+    @Inject
+    private ClientTimeZoneTracker timeZoneTracker;
 
     @Inject
     private Request request;
@@ -197,8 +222,9 @@ public class DateField extends AbstractField
 
             public Object get()
             {
-                DateFormat shortDateFormat = time ? DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT,
-                        locale) : DateFormat.getDateInstance(DateFormat.SHORT, locale);
+                DateFormat shortDateFormat = time ? DateFormat.getDateTimeInstance(
+                        DateFormat.SHORT, DateFormat.SHORT, locale) : DateFormat.getDateInstance(
+                        DateFormat.SHORT, locale);
 
                 if (shortDateFormat instanceof SimpleDateFormat)
                 {
@@ -260,6 +286,8 @@ public class DateField extends AbstractField
         "alt", "[Show]");
         writer.end(); // img
 
+        writeTimeZone(writer);
+
         JSONObject spec = new JSONObject("clientId", clientId, "clientDateFormat", formatConverter
                 .convertToClient(format), "showAtElement", showAtElement, "align", align)
                 .put("time", time).put("singleClick", singleClick);
@@ -267,10 +295,79 @@ public class DateField extends AbstractField
         javascriptSupport.addInitializerCall("tapxDateField", spec);
     }
 
+    private static Mapper<String, TimeZone> ID_TO_TIME_ZONE = new Mapper<String, TimeZone>()
+    {
+        @Override
+        public TimeZone map(String value)
+        {
+            return TimeZone.getTimeZone(value);
+        }
+    };
+
+    private Comparator<TimeZone> timeZoneComparator = new Comparator<TimeZone>()
+    {
+        @Override
+        public int compare(TimeZone o1, TimeZone o2)
+        {
+            int result = o1.getRawOffset() - o2.getRawOffset();
+
+            if (result == 0)
+                result = o1.getDisplayName(locale).compareTo(o2.getDisplayName(locale));
+
+            return result;
+        }
+    };
+
+    private void writeTimeZone(MarkupWriter writer)
+    {
+        if (timeZone == TimeZoneVisibility.NONE)
+            return;
+
+        TimeZone tz = timeZoneTracker.getClientTimeZone();
+
+        writer.element("span", "class", "tx-datefield-timezone");
+
+        switch (timeZone)
+        {
+            case DISPLAY:
+                writer.write(" ");
+                writer.write(tz.getDisplayName(locale));
+                break;
+
+            case SELECT:
+
+                writer.element("select", "name", getControlName() + "$timezone");
+
+                for (TimeZone option : F.flow(TimeZone.getAvailableIDs()).map(ID_TO_TIME_ZONE)
+                        .sort(timeZoneComparator))
+                {
+                    writer.element("option", "value", option.getID());
+
+                    if (tz.equals(option))
+                        writer.attributes("selected", "selected");
+
+                    int offset = option.getRawOffset() / (1000 * 60 * 60);
+
+                    writer.write(String.format("UTC%+03d %s", offset, option.getID()));
+
+                    writer.end();
+                }
+
+                writer.end();
+
+            default:
+                break;
+        }
+
+        writer.end();
+    }
+
     private String formatCurrentValue()
     {
         if (value == null)
             return "";
+
+        format.setTimeZone(timeZoneTracker.getClientTimeZone());
 
         return format.format(value);
     }
@@ -282,12 +379,31 @@ public class DateField extends AbstractField
 
         tracker.recordInput(this, value);
 
+        updateClientTimeZone(elementName);
+
         Date parsedValue = null;
 
         try
         {
             if (InternalUtils.isNonBlank(value))
-                parsedValue = format.parse(value);
+            {
+                // Regardless of the timeZone set on the DateFormat, the value is parsed in
+                // the current default TimeZone. Use the calendar to adjust it out.
+
+                Date inDefaultTimeZone = format.parse(value);
+
+                Calendar c = Calendar.getInstance(locale);
+                c.setTime(inDefaultTimeZone);
+
+                TimeZone clientZone = timeZoneTracker.getClientTimeZone();
+                TimeZone defaultZone = TimeZone.getDefault();
+                long now = System.currentTimeMillis();
+                int offset = defaultZone.getOffset(now) - clientZone.getOffset(now);
+
+                c.add(Calendar.MILLISECOND, offset);
+
+                parsedValue = c.getTime();
+            }
         }
         catch (ParseException ex)
         {
@@ -307,4 +423,16 @@ public class DateField extends AbstractField
         }
     }
 
+    private void updateClientTimeZone(String elementName)
+    {
+        if (timeZone != TimeZoneVisibility.SELECT)
+            return;
+
+        String id = request.getParameter(elementName + "$timezone");
+
+        TimeZone tz = TimeZone.getTimeZone(id);
+
+        timeZoneTracker.setClientTimeZone(tz);
+
+    }
 }
