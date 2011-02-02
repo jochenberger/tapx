@@ -1,7 +1,22 @@
+// Copyright 2011 Howard M. Lewis Ship
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package com.howardlewisship.tapx.core.components;
 
 import java.util.List;
 
+import org.apache.tapestry5.BindingConstants;
 import org.apache.tapestry5.Block;
 import org.apache.tapestry5.ComponentResources;
 import org.apache.tapestry5.MarkupWriter;
@@ -31,12 +46,28 @@ public class Tree
     private TreeModel model;
 
     /**
+     * Allows the container to specify additional CSS class names for the outer DIV element. The outer DIV
+     * always has the class name "tx-tree-container"; the additional class names are typically used to apply
+     * a specific size and width to the component.
+     */
+    @Parameter(name = "class", defaultPrefix = BindingConstants.LITERAL)
+    private String className;
+
+    /**
      * Optional parameter used to inform the container about what TreeNode is currently rendering; this
      * is primarily used when the label parameter is bound.
      */
     @Property
     @Parameter
     private TreeNode node;
+
+    /**
+     * Optional parameter used to inform the container about the value of the currently rendering TreeNode; this
+     * is often preferable to the TreeNode, and like the node parameter, is primarily used when the label parameter
+     * it bound.
+     */
+    @Parameter
+    private Object value;
 
     @Property
     @Parameter(value = "block:defaultRenderTreeNodeLabel")
@@ -63,6 +94,8 @@ public class Tree
         @Override
         public void render(MarkupWriter writer)
         {
+            value = node.getValue();
+
             // The outer span provides the visual structure (the dashes). Since we can't rely on CSS3,
             // we mark the last one explicitly.
 
@@ -91,6 +124,11 @@ public class Tree
             writer.end();
         }
     };
+
+    public String getContainerClass()
+    {
+        return className == null ? "tx-tree-container" : "tx-tree-container " + className;
+    }
 
     void setupRender()
     {
