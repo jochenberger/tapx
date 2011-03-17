@@ -1,7 +1,7 @@
-Tapx: Tapestry 5 Extensions by Howard Lewis Ship
+TapX: Tapestry 5 Extensions by Howard Lewis Ship
 ====
 
-The Tapx modules are a set of extensions to the [Apache Tapestry Web Framework](http://tapestry.apache.org]) that provide new capabilities that are not yet available in the main framework.
+The TapX modules are a set of extensions to the [Apache Tapestry Web Framework](http://tapestry.apache.org]) that provide new capabilities that are not yet available in the main framework.
 
 In some cases, a module exists here for licensing reasons, as it may integrate with an existing library that is not compatible with the Apache Software License.
 
@@ -21,9 +21,11 @@ This module provides the following features:
 * Silk 1.3 icon set from [FamFamFam](http://www.famfamfam.com/lab/icons/silk/)
 * Components:
   * SetEditor
-  * DynamicTemplate
+  * Dynamic
+  * Tree
+  * MultipleSelect
 * Mixins:
-  * SetEditor
+  * Confirm
   
 tapx-datefield
 --------------
