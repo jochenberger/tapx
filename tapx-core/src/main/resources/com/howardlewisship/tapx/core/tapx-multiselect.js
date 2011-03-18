@@ -19,11 +19,14 @@ Tapx.extendInitializer(function() {
 		select.observe("change", updateButton);
 		select.observe("tapx:refreshbuttonstate", updateButton);
 
-		button.observe("click", function(event) {
-			if (enabled) {
+		function callbackIfEnabled() {
+			if (enabled)
 				callback();
-			}
-		});
+		}
+
+		button.observe("click", callbackIfEnabled);
+
+		select.observe("dblclick", callbackIfEnabled);
 	}
 
 	function moveOption(option, to) {
@@ -80,37 +83,18 @@ Tapx.extendInitializer(function() {
 	}
 
 	function initializer(spec) {
-		var outerDiv = $(spec.clientId);
-		var hidden = new Element("input", {
-			type : "hidden",
-			name : spec.name
-		});
-		outerDiv.insert(hidden);
+		var availableSelect = $(spec.clientId);
+		var outerDiv = availableSelect.up(".tx-multiselect");
 
-		var mainDiv = new Element("div", {
-			"class" : "tx-multiselect-columns"
-		});
+		var hidden = outerDiv.down("input[type='hidden']");
 
-		outerDiv.insert(mainDiv);
-
-		mainDiv.update("<div class='tx-available'>"
-				+ "<div class='tx-title'>Available:</div>"
-				+ "<select multiple='multiple'></select></div>"
-				+ "<div class='tx-controls'>"
-				+ "<span class='tx-select tx-disabled' title='Select'></span>"
-				+ "<span class='tx-deselect tx-disabled' title='Deselect'>"
-				+ "</span></div><div class='tx-selected'>"
-				+ "<div class='tx-title'>Selected:</div>"
-				+ "<select multiple='multiple'></select></div>");
-
-		var availableSelect = mainDiv.down(".tx-available > select");
-		var selectedSelect = mainDiv.down(".tx-selected > select");
+		var selectedSelect = outerDiv.down(".tx-selected > select");
 
 		(spec.model || []).each(function(row) {
 
 			var valueId = row[0];
 			var selected = (spec.values || []).include(valueId);
-			var divToUpdate = selected ? selectedSelect : availableSelect;
+			var selectElement = selected ? selectedSelect : availableSelect;
 
 			var option = new Element("option").update(row[1]);
 
@@ -118,13 +102,13 @@ Tapx.extendInitializer(function() {
 				clientValue : valueId
 			};
 
-			divToUpdate.insert(option);
+			selectElement.insert(option);
 		});
 
 		function rebuildHiddenFieldValue() {
-			// First array is the list of selected values (for values defined by
-			// the model) Second array is the list of selected labels (for
-			// values added on the client)
+			// First array is the list of selected values (for values
+			// defined by the model at initial render). Second array is the list
+			// of selected labels (for values added on the client)
 
 			var hiddenFieldValue = [ [], [] ];
 
@@ -143,16 +127,74 @@ Tapx.extendInitializer(function() {
 
 		rebuildHiddenFieldValue();
 
-		setupButton(availableSelect, mainDiv.down(".tx-select"), function() {
+		setupButton(availableSelect, outerDiv.down(".tx-select"), function() {
 			transferOptions(availableSelect, selectedSelect);
 			rebuildHiddenFieldValue();
 
 		});
-		setupButton(selectedSelect, mainDiv.down(".tx-deselect"), function() {
+		setupButton(selectedSelect, outerDiv.down(".tx-deselect"), function() {
 			transferOptions(selectedSelect, availableSelect);
 			rebuildHiddenFieldValue();
 		});
 
+		var errorDiv = outerDiv.down('.tx-error');
+
+		errorDiv.hide();
+
+		var inputField = outerDiv.down('.tx-input input');
+
+		function error(message) {
+			inputField.addClassName("t-error").select();
+			errorDiv.update(message).show();
+		}
+
+		function addNewOption() {
+			var newLabel = inputField.value;
+
+			inputField.removeClassName("t-error");
+			errorDiv.hide().update();
+
+			if (newLabel === "")
+				return;
+
+			var allOptions = $A(availableSelect.options).concat(
+					$A(selectedSelect.options));
+
+			if (allOptions.any(function(opt) {
+				return opt.innerHTML === newLabel
+			})) {
+				error("Value already exists.");
+				return;
+			}
+
+			deselectAllOptions(selectedSelect);
+
+			var option = new Element("option", {
+				selected : true
+			}).update(newLabel);
+
+			option.txValue = {
+				label : newLabel
+			};
+
+			moveOption(option, selectedSelect);
+
+			rebuildHiddenFieldValue();
+
+			inputField.value = '';
+			inputField.focus();
+		}
+
+		inputField.observe("change", addNewOption);
+
+		inputField.observe("keypress", function(event) {
+			if (event.keyCode != Event.KEY_RETURN)
+				return;
+
+			event.stop();
+
+			addNewOption();
+		});
 	}
 
 	return {
