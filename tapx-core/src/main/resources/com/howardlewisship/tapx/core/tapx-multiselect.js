@@ -82,6 +82,37 @@ Tapx.extendInitializer(function() {
 		to.fire("tapx:refreshbuttonstate");
 	}
 
+	function lightbox(title, contentURL) {
+		Modalbox.show("<span class='tx-ajax-wait'></span>", {
+			title : title,
+			afterLoad : function() {
+				Tapestry.ajaxRequest(contentURL, function(transport) {
+					var reply = transport.responseJSON;
+
+					var inits = reply.inits;
+					reply.inits = null;
+
+					Tapestry.loadScriptsInReply(reply, function() {
+
+						Modalbox.show(reply.content, {
+							title : title,
+							autoFocusing : false,
+							afterLoad : function() {
+
+								Tapestry.executeInits(inits);
+							},
+
+							afterUpdate : function() {
+
+								Modalbox.resizeToContent();
+							}
+						});
+					});
+				});
+			}
+		});
+	}
+
 	function initializer(spec) {
 		var availableSelect = $(spec.clientId);
 		var outerDiv = availableSelect.up(".tx-multiselect");
@@ -96,11 +127,9 @@ Tapx.extendInitializer(function() {
 			var selected = (spec.values || []).include(valueId);
 			var selectElement = selected ? selectedSelect : availableSelect;
 
-			var option = new Element("option").update(row[1]);
+			var option = new Element("option").update(row[1].escapeHTML());
 
-			option.txValue = {
-				clientValue : valueId
-			};
+			option.txClientValue = valueId;
 
 			selectElement.insert(option);
 		});
@@ -110,16 +139,10 @@ Tapx.extendInitializer(function() {
 			// defined by the model at initial render). Second array is the list
 			// of selected labels (for values added on the client)
 
-			var hiddenFieldValue = [ [], [] ];
+			var hiddenFieldValue = [];
 
 			$A(selectedSelect.options).each(function(option) {
-				var value = option.txValue;
-
-				if (value.clientValue) {
-					hiddenFieldValue[0].push(value.clientValue);
-				} else {
-					hiddenFieldValue[1].push(value.label);
-				}
+				hiddenFieldValue.push(option.txClientValue);
 			});
 
 			hidden.value = hiddenFieldValue.toJSON();
@@ -132,72 +155,48 @@ Tapx.extendInitializer(function() {
 			rebuildHiddenFieldValue();
 
 		});
+
 		setupButton(selectedSelect, outerDiv.down(".tx-deselect"), function() {
 			transferOptions(selectedSelect, availableSelect);
 			rebuildHiddenFieldValue();
 		});
 
-		var errorDiv = outerDiv.down('.tx-error');
+		outerDiv.down(".tx-input button").observe("click", function(event) {
+			event.stop();
 
-		errorDiv.hide();
+			lightbox(event.element().innerHTML, spec.newValueURL);
+		});
 
-		var inputField = outerDiv.down('.tx-input input');
+		$(spec.clientId).observe("tapx:multiselect:newvalue", function(event) {
 
-		function error(message) {
-			inputField.addClassName("t-error").select();
-			errorDiv.update(message).show();
-		}
-
-		function addNewOption() {
-			var newLabel = inputField.value;
-
-			inputField.removeClassName("t-error");
-			errorDiv.hide().update();
-
-			if (newLabel === "")
-				return;
-
-			var allOptions = $A(availableSelect.options).concat(
-					$A(selectedSelect.options));
-
-			if (allOptions.any(function(opt) {
-				return opt.innerHTML === newLabel
-			})) {
-				error("Value already exists.");
-				return;
-			}
+			var option = event.memo;
+			option.selected = true;
 
 			deselectAllOptions(selectedSelect);
 
-			var option = new Element("option", {
-				selected : true
-			}).update(newLabel);
-
-			option.txValue = {
-				label : newLabel
-			};
-
 			moveOption(option, selectedSelect);
 
+			availableSelect.fire("tapx:refreshbuttonstate");
+			selectedSelect.fire("tapx:refreshbuttonstate");
+
+			selectedSelect.focus();
+			
 			rebuildHiddenFieldValue();
-
-			inputField.value = '';
-			inputField.focus();
-		}
-
-		inputField.observe("change", addNewOption);
-
-		inputField.observe("keypress", function(event) {
-			if (event.keyCode != Event.KEY_RETURN)
-				return;
-
-			event.stop();
-
-			addNewOption();
 		});
 	}
 
+	function newValue(spec) {
+		Modalbox.hide();
+
+		var option = new Element("option").update(spec.label.escapeHTML());
+
+		option.txClientValue = spec.clientValue;
+
+		$(spec.clientId).fire("tapx:multiselect:newvalue", option);
+	}
+
 	return {
-		tapxMultipleSelect : initializer
+		tapxMultipleSelect : initializer,
+		tapxMultipleSelectNewValue : newValue
 	};
 });

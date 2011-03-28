@@ -2,9 +2,15 @@
 
   <t:form>
 
-    <t:label for="colors"/>
+    <t:label for="people"/>
 
-    <tx:multipleselect t:id="colors" values="selectedValues" model="model"/>
+    <tx:multipleselect t:id="people" newValue="newPerson" values="selectedValues" model="model"
+      singularLabel="Person">
+      <p:lastName>
+        <label for="lastName">Last Name (Sur Name)</label>
+        <t:textfield t:id="lastName" value="newPerson.lastName"/>
+      </p:lastName>
+    </tx:multipleselect>
 
     <br clear="both"/>
 
@@ -19,8 +25,6 @@
 
   <p>Selected values:</p>
 
-  <ul>
-    <li t:type="loop" source="selectedValues" value="var:x">${var:x}</li>
-  </ul>
+  <t:grid source="selectedValues"/>
 
 </t:layout>

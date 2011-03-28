@@ -19,20 +19,30 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.tapestry5.BindingConstants;
+import org.apache.tapestry5.Block;
 import org.apache.tapestry5.ComponentAction;
 import org.apache.tapestry5.ComponentResources;
 import org.apache.tapestry5.Field;
+import org.apache.tapestry5.MarkupWriter;
+import org.apache.tapestry5.Renderable;
 import org.apache.tapestry5.annotations.Environmental;
 import org.apache.tapestry5.annotations.Import;
+import org.apache.tapestry5.annotations.InjectComponent;
 import org.apache.tapestry5.annotations.Parameter;
-import org.apache.tapestry5.corelib.base.AbstractField;
+import org.apache.tapestry5.annotations.Property;
+import org.apache.tapestry5.annotations.SupportsInformalParameters;
+import org.apache.tapestry5.beaneditor.BeanModel;
+import org.apache.tapestry5.corelib.components.BeanEditor;
 import org.apache.tapestry5.corelib.components.Palette;
+import org.apache.tapestry5.corelib.components.Zone;
 import org.apache.tapestry5.func.F;
 import org.apache.tapestry5.func.Flow;
 import org.apache.tapestry5.func.Mapper;
+import org.apache.tapestry5.internal.bindings.AbstractBinding;
 import org.apache.tapestry5.ioc.annotations.Inject;
 import org.apache.tapestry5.json.JSONArray;
 import org.apache.tapestry5.json.JSONObject;
+import org.apache.tapestry5.services.BeanModelSource;
 import org.apache.tapestry5.services.ComponentDefaultProvider;
 import org.apache.tapestry5.services.FormSupport;
 import org.apache.tapestry5.services.Request;
@@ -42,10 +52,19 @@ import com.howardlewisship.tapx.core.multiselect.MultipleSelectModel;
 
 /**
  * Both a simplification of the Tapestry {@link Palette} component, and an extension in that it supports
- * adding new values on the fly on the client side.
+ * adding new values on the fly, using a form located inside a Modalbox modal dialog. Specically
+ * limited to editing a <em>Set</em> of values: element order is immaterial, and the UI keeps
+ * the values sorted in alphabetical order by {@linkplain MultipleSelectModel#toLabel(Object) label}.
+ * <p>
+ * The UI includes an "Add" button to add a new value of the type appropriate to the set. This sets up a modal dialog on
+ * the client side, and a uses a server-side {@link BeanEditor} to render the form. Informal blocks bound do this
+ * component will, in turn, be provided to the BeanEditor component for use as property overrides.
+ * <p>
+ * TODO: Rename this to SetEditor and delete the current SetEditor.
  */
 @Import(stack = "tapx-core")
 @SuppressWarnings("rawtypes")
+@SupportsInformalParameters
 public class MultipleSelect implements Field
 {
     /**
@@ -60,8 +79,19 @@ public class MultipleSelect implements Field
     private MultipleSelectModel model;
 
     /**
-     * Additional CSS class(es), beyond the mandatory default of "tx-multiselect".
+     * Used when creating a form to allow a new value to be created. If not supplied, a default model
+     * is generated from the {@linkplain BeanModelSource#createEditModel(Class, org.apache.tapestry5.ioc.Messages) bean
+     * model source} using the class of the {@linkplain MultipleSelectModel#createEmptyInstance() new instance}.
      */
+    @Property
+    @Parameter(allowNull = false)
+    private BeanModel beanModel;
+
+    /**
+     * Additional CSS class(es), beyond the mandatory default of "tx-multiselect".
+     * The CSS class(es) will also be used by the form used to gather data for a new field.
+     */
+    @Property
     @Parameter(name = "class", defaultPrefix = BindingConstants.LITERAL)
     private String className;
 
@@ -72,6 +102,14 @@ public class MultipleSelect implements Field
      */
     @Parameter(defaultPrefix = BindingConstants.LITERAL)
     private String label;
+
+    /**
+     * Alternate label used to represent a "single" instance of the value; this is used as part of
+     * button labels, and in the title of the modal dialog.
+     */
+    @Property
+    @Parameter(defaultPrefix = BindingConstants.LITERAL, value = "prop:label")
+    private String singularLabel;
 
     @Environmental
     private JavaScriptSupport jss;
@@ -89,6 +127,45 @@ public class MultipleSelect implements Field
     private ComponentDefaultProvider defaultProvider;
 
     private String clientId, controlName;
+
+    /**
+     * Parameter used to communicate a newValue instance created from the model up to the containing
+     * component. This is used when creating UI blocks as overrides to the BeanEditor's default
+     * UI blocks for the properties of the new instance.
+     */
+    @Property
+    @Parameter
+    private Object newValue;
+
+    @InjectComponent
+    private Zone newValueEditor;
+
+    @Inject
+    private Block editor, success;
+
+    @Inject
+    private BeanModelSource beanModelSource;
+
+    Object defaultBeanModel()
+    {
+        return new AbstractBinding()
+        {
+            @Override
+            public boolean isInvariant()
+            {
+                return false;
+            }
+
+            @Override
+            public Object get()
+            {
+                if (newValue == null)
+                    return null;
+
+                return beanModelSource.createEditModel(newValue.getClass(), resources.getContainerMessages());
+            }
+        };
+    }
 
     private static class Pair implements Comparable<Pair>
     {
@@ -190,7 +267,10 @@ public class MultipleSelect implements Field
 
         formSupport.store(this, new ProcessSubmission(controlName));
 
-        JSONObject spec = new JSONObject("clientId", clientId);
+        JSONObject spec = new JSONObject("clientId", clientId,
+
+        "newValueURL", createEventURL("newValue"));
+
         for (Object value : values)
         {
             String clientValue = model.toClient(value);
@@ -208,6 +288,11 @@ public class MultipleSelect implements Field
         jss.addInitializerCall("tapxMultipleSelect", spec);
     }
 
+    private String createEventURL(String eventName)
+    {
+        return resources.createEventLink(eventName, clientId).toURI();
+    }
+
     @SuppressWarnings("unchecked")
     protected void processSubmission(String name)
     {
@@ -219,7 +304,7 @@ public class MultipleSelect implements Field
 
         // First the values that have a server-side id.
 
-        for (String clientValue : toStrings(selected, 0))
+        for (String clientValue : toStrings(selected))
         {
             Object serverValue = model.toValue(clientValue);
 
@@ -229,24 +314,10 @@ public class MultipleSelect implements Field
 
             values.add(serverValue);
         }
-
-        for (String label : toStrings(selected, 1))
-        {
-            Object serverValue = model.createValue(label);
-
-            if (serverValue == null)
-                throw new RuntimeException(String.format("Model returned null when creating value for label '%s'.",
-                        label));
-
-            values.add(serverValue);
-        }
-
     }
 
-    private List<String> toStrings(JSONArray selected, int index)
+    private List<String> toStrings(JSONArray values)
     {
-        JSONArray values = selected.getJSONArray(index);
-
         List<String> result = new ArrayList<String>(values.length());
 
         for (int i = 0; i < values.length(); i++)
@@ -255,5 +326,53 @@ public class MultipleSelect implements Field
         }
 
         return result;
+    }
+
+    /**
+     * Event handler triggered from the client side. The result of this event is a partial page update response
+     * that will be used to fill in the content of the modal dialog.
+     */
+    Object onNewValue(String clientId)
+    {
+        this.clientId = clientId;
+
+        return editor;
+    }
+
+    /** Event handler triggered when the modal dialog is submitted. */
+    void onPrepareForSubmitFromNewValue(String clientId)
+    {
+        this.clientId = clientId;
+    }
+
+    /** Event handler when preparing to render or submit the new value form; creates a new empty instance. */
+    void onPrepareFromNewValue()
+    {
+        newValue = model.createEmptyInstance();
+    }
+
+    Object onSuccessFromNewValue()
+    {
+        // Save the new value to the database (or whatever it takes to assign a propery id to it).
+
+        model.persistNewInstance(newValue);
+
+        // Return a block that will render the content. The content will be empty,
+        // but it gives us a chance to write the necessary JS at the correct time.
+
+        return success;
+    }
+
+    void onWriteSuccessJavaScript()
+    {
+        JSONObject spec = new JSONObject("clientId", clientId, "clientValue", model.toClient(newValue), "label",
+                model.toLabel(newValue));
+
+        jss.addInitializerCall("tapxMultipleSelectNewValue", spec);
+    }
+
+    Object onFailureFromNewValue()
+    {
+        return newValueEditor.getBody();
     }
 }
