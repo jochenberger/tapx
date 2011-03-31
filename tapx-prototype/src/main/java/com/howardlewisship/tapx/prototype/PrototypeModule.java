@@ -17,11 +17,13 @@ package com.howardlewisship.tapx.prototype;
 import org.apache.tapestry5.Asset;
 import org.apache.tapestry5.MarkupWriter;
 import org.apache.tapestry5.annotations.Path;
+import org.apache.tapestry5.ioc.Configuration;
 import org.apache.tapestry5.ioc.MappedConfiguration;
 import org.apache.tapestry5.ioc.OrderedConfiguration;
 import org.apache.tapestry5.ioc.annotations.Inject;
 import org.apache.tapestry5.json.JSONObject;
 import org.apache.tapestry5.services.Environment;
+import org.apache.tapestry5.services.LibraryMapping;
 import org.apache.tapestry5.services.MarkupRenderer;
 import org.apache.tapestry5.services.MarkupRendererFilter;
 import org.apache.tapestry5.services.PartialMarkupRenderer;
@@ -67,4 +69,9 @@ public class PrototypeModule
         configuration.add("TapestryFixes", tapestryFixes, "after:RenderSupport");
 
     }
+    public static void contributeComponentClassResolver(final Configuration<LibraryMapping> configuration)
+    {
+        configuration.add(new LibraryMapping("tapx", "com.howardlewisship.tapx.prototype"));
+    }
+
 }
