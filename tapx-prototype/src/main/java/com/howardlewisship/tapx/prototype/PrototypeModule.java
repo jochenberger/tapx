@@ -1,4 +1,4 @@
-// Copyright 2009 Howard M. Lewis Ship
+// Copyright 2009, 2011 Howard M. Lewis Ship
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,17 +17,15 @@ package com.howardlewisship.tapx.prototype;
 import org.apache.tapestry5.Asset;
 import org.apache.tapestry5.MarkupWriter;
 import org.apache.tapestry5.annotations.Path;
+import org.apache.tapestry5.corelib.components.Palette;
 import org.apache.tapestry5.ioc.Configuration;
 import org.apache.tapestry5.ioc.MappedConfiguration;
 import org.apache.tapestry5.ioc.OrderedConfiguration;
 import org.apache.tapestry5.ioc.annotations.Inject;
-import org.apache.tapestry5.json.JSONObject;
 import org.apache.tapestry5.services.Environment;
 import org.apache.tapestry5.services.LibraryMapping;
 import org.apache.tapestry5.services.MarkupRenderer;
 import org.apache.tapestry5.services.MarkupRendererFilter;
-import org.apache.tapestry5.services.PartialMarkupRenderer;
-import org.apache.tapestry5.services.PartialMarkupRendererFilter;
 import org.apache.tapestry5.services.javascript.JavaScriptSupport;
 
 public class PrototypeModule
@@ -37,41 +35,42 @@ public class PrototypeModule
         configuration.override("tapestry.scriptaculous.path", "com/howardlewisship/tapx/prototype");
     }
 
-    public static void contributeMarkupRenderer(
-            final OrderedConfiguration<MarkupRendererFilter> configuration,
+    public static void contributeComponentClassResolver(final Configuration<LibraryMapping> configuration)
+    {
+        configuration.add(new LibraryMapping("tapx", "com.howardlewisship.tapx.prototype"));
+    }
+
+    /**
+     * Patches Tapestry to include a file of fixes to make Tapestry 5.2.5 work with Prototype 1.7.
+     * This has two side effects: first <em>every</em> page will not have the base Tapestry stack on it.
+     * That's ok ... most pages already will have this. Secondly, all pages will import the Tapestry {@link Palette}s
+     * JavaScript (so that it can be patched) even if they don't use the Palette.
+     */
+    public static void contributeMarkupRenderer(final OrderedConfiguration<MarkupRendererFilter> configuration,
             final Environment environment,
-            @Inject @Path("classpath:com/howardlewisship/tapx/prototype/tapestry-js-fixes.js") final Asset tapestryPatches) {
-        MarkupRendererFilter tapestryFixesFilter = new MarkupRendererFilter() {
-            public void renderMarkup(final MarkupWriter writer, final MarkupRenderer renderer) {
+
+            @Inject
+            @Path("classpath:org/apache/tapestry5/corelib/components/palette.js")
+            final Asset paletteLibrary,
+
+            @Inject
+            @Path("classpath:com/howardlewisship/tapx/prototype/tapestry-js-fixes.js")
+            final Asset tapestryPatches)
+    {
+
+        MarkupRendererFilter tapestryFixesFilter = new MarkupRendererFilter()
+        {
+            public void renderMarkup(final MarkupWriter writer, final MarkupRenderer renderer)
+            {
                 JavaScriptSupport javaScriptSupport = environment.peekRequired(JavaScriptSupport.class);
+
+                javaScriptSupport.importJavaScriptLibrary(paletteLibrary);
                 javaScriptSupport.importJavaScriptLibrary(tapestryPatches);
+
                 renderer.renderMarkup(writer);
             }
         };
 
         configuration.add("TapestryFixes", tapestryFixesFilter, "after:RenderSupport");
     }
-
-    public static void contributePartialMarkupRenderer(
-            final OrderedConfiguration<PartialMarkupRendererFilter> configuration,
-            final Environment environment,
-            @Inject @Path("classpath:com/howardlewisship/tapx/prototype/tapestry-js-fixes.js") final Asset tapestryPatches) {
-
-        PartialMarkupRendererFilter tapestryFixes = new PartialMarkupRendererFilter() {
-            public void renderMarkup(final MarkupWriter writer, final JSONObject reply,
-                    final PartialMarkupRenderer renderer) {
-                JavaScriptSupport javaScriptSupport = environment.peekRequired(JavaScriptSupport.class);
-                javaScriptSupport.importJavaScriptLibrary(tapestryPatches);
-                renderer.renderMarkup(writer, reply);
-            }
-        };
-
-        configuration.add("TapestryFixes", tapestryFixes, "after:RenderSupport");
-
-    }
-    public static void contributeComponentClassResolver(final Configuration<LibraryMapping> configuration)
-    {
-        configuration.add(new LibraryMapping("tapx", "com.howardlewisship.tapx.prototype"));
-    }
-
 }
